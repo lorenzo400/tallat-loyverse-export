@@ -56,6 +56,7 @@ OUTPUT_DIR         = os.getenv("OUTPUT_DIR", "./output")
 GDRIVE_FOLDER_NAME = os.getenv("GDRIVE_FOLDER_NAME", "Tallat — Reportes Semanales")
 GDRIVE_CREDS_FILE  = os.getenv("GDRIVE_CREDS_FILE", "gdrive_credentials.json")
 GDRIVE_CREDS_JSON  = os.getenv("GDRIVE_CREDS_JSON", "")   # JSON inline para Railway
+GDRIVE_FOLDER_ID   = os.getenv("GDRIVE_FOLDER_ID", "")    # ID carpeta raíz en Drive
 BASE_URL           = "https://api.loyverse.com/v1.0"
 
 BACKFILL_START = datetime.date(2026, 1, 5)   # lunes 5 enero 2026
@@ -319,43 +320,73 @@ def _get_drive():
     _drive_svc = build("drive", "v3", credentials=creds)
     return _drive_svc
 
-def _folder(svc, name, parent_id=None):
+def _folder(svc, name, parent_id):
+    """Busca o crea una subcarpeta dentro de parent_id."""
     cache_key = f"{parent_id}:{name}"
     if cache_key in _folder_cache:
         return _folder_cache[cache_key]
-    q = f"mimeType='application/vnd.google-apps.folder' and name='{name}' and trashed=false"
-    if parent_id:
-        q += f" and '{parent_id}' in parents"
-    res = svc.files().list(q=q, fields="files(id)").execute()
+    q = (f"mimeType='application/vnd.google-apps.folder'"
+         f" and name='{name}'"
+         f" and '{parent_id}' in parents"
+         f" and trashed=false")
+    res = svc.files().list(
+        q=q, fields="files(id)",
+        includeItemsFromAllDrives=True,
+        supportsAllDrives=True,
+    ).execute()
     files = res.get("files", [])
     if files:
         fid = files[0]["id"]
     else:
-        meta = {"name": name, "mimeType": "application/vnd.google-apps.folder"}
-        if parent_id:
-            meta["parents"] = [parent_id]
-        fid = svc.files().create(body=meta, fields="id").execute()["id"]
+        meta = {
+            "name": name,
+            "mimeType": "application/vnd.google-apps.folder",
+            "parents": [parent_id],
+        }
+        fid = svc.files().create(
+            body=meta, fields="id",
+            supportsAllDrives=True,
+        ).execute()["id"]
     _folder_cache[cache_key] = fid
     return fid
 
 def _upload(svc, folder_id, filename, content_str, mime="text/plain"):
-    q   = f"name='{filename}' and '{folder_id}' in parents and trashed=false"
-    res = svc.files().list(q=q, fields="files(id)").execute()
+    """Sube o actualiza un archivo en la carpeta indicada."""
+    q = (f"name='{filename}'"
+         f" and '{folder_id}' in parents"
+         f" and trashed=false")
+    res = svc.files().list(
+        q=q, fields="files(id)",
+        includeItemsFromAllDrives=True,
+        supportsAllDrives=True,
+    ).execute()
     ex  = res.get("files", [])
     med = MediaIoBaseUpload(
-        io.BytesIO(content_str.encode("utf-8")), mimetype=mime, resumable=False)
+        io.BytesIO(content_str.encode("utf-8")),
+        mimetype=mime, resumable=False,
+    )
     if ex:
-        svc.files().update(fileId=ex[0]["id"], media_body=med).execute()
+        svc.files().update(
+            fileId=ex[0]["id"],
+            media_body=med,
+            supportsAllDrives=True,
+        ).execute()
     else:
         svc.files().create(
             body={"name": filename, "parents": [folder_id]},
-            media_body=med, fields="id").execute()
+            media_body=med, fields="id",
+            supportsAllDrives=True,
+        ).execute()
     log.info(f"  Drive: {filename}")
 
 def _update_index(svc, root_id, date_str, week_label, raw):
     fname = "indice_semanas.json"
     q     = f"name='{fname}' and '{root_id}' in parents and trashed=false"
-    ex    = svc.files().list(q=q, fields="files(id)").execute().get("files", [])
+    ex    = svc.files().list(
+        q=q, fields="files(id)",
+        includeItemsFromAllDrives=True,
+        supportsAllDrives=True,
+    ).execute().get("files", [])
     index = {}
     if ex:
         try:
@@ -363,12 +394,11 @@ def _update_index(svc, root_id, date_str, week_label, raw):
             index   = json.loads(content.decode("utf-8"))
         except Exception:
             pass
-
     index[date_str] = {
-        "semana":      week_label,
-        "tickets":     raw["tickets_total"],
-        "takeout_pct": raw["takeout_pct"],
-        "revenue_eur": raw["revenue_eur"],
+        "semana":       week_label,
+        "tickets":      raw["tickets_total"],
+        "takeout_pct":  raw["takeout_pct"],
+        "revenue_eur":  raw["revenue_eur"],
         "top_bolleria": list(raw["bolleria"].items())[:5],
         "top_cafes":    list(raw["cafes"].items())[:5],
         "total_retail": sum(raw["retail"].values()),
@@ -380,10 +410,14 @@ def upload_to_drive(week_label, date_str, report, wa, raw):
     svc = _get_drive()
     if not svc:
         return
+    if not GDRIVE_FOLDER_ID:
+        log.warning("  GDRIVE_FOLDER_ID no configurado — Drive desactivado")
+        return
     try:
-        root_id  = _folder(svc, GDRIVE_FOLDER_NAME)
-        year_id  = _folder(svc, "2026", root_id)
-        week_id  = _folder(svc, f"semana_{date_str}", year_id)
+        # Usamos directamente el ID de la carpeta compartida en el Drive personal
+        root_id = GDRIVE_FOLDER_ID
+        year_id = _folder(svc, "2026", root_id)
+        week_id = _folder(svc, f"semana_{date_str}", year_id)
 
         _upload(svc, week_id, f"reporte_{date_str}.txt",  report)
         _upload(svc, week_id, f"whatsapp_{date_str}.txt", wa)
