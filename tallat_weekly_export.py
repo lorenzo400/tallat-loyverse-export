@@ -96,15 +96,32 @@ CAFES = {
     "Naranja Coffee Soda", "Dirty Orxata", "Shakerato (---)",
 }
 
-RETAIL_RE          = re.compile(r'250g|1[Kk]g', re.IGNORECASE)
+RETAIL_RE          = re.compile(r'250g|1[Kk]g|BYO 250g', re.IGNORECASE)
 TAKEOUT_RATIO_HIST = 0.523
+# Ratios SOP × ventas reales takeout (17.061 tickets, 19.702 bebidas, 1,15/ticket)
+# Vasos 4oz: espresso, TALLAT S, macchiato S           → 0.085/ticket
+# Vasos 6oz: espresso L, cappuccino, flat white,       → 0.643/ticket
+#            long black, TALLAT L, café con leche S
+# Vasos 8oz: café con leche L, chai, matcha,           → 0.378/ticket
+#            hot chocolate, batch brew
+# 12oz clear: todos los iced + freddo + specials        → 0.049/ticket
+# Tapas 6/7oz = 4oz+6oz drinks = 0.728
+# Tapas 8oz   = 8oz drinks     = 0.378
+# Fundas: solo Long Black (1/10 llevan funda)           → 0.007/ticket
+# Bolsas kraft: desde histórico Greenuso                → 0.210/ticket
 DESECHABLES_RATIO  = {
-    "vasos_todos":       1.00,
-    "tapas_calientes":   0.80,
-    "fundas_corrugadas": 0.60,
-    "bolsas_kraft":      0.30,
-    "portavasos_x2":     0.15,
-    "pajitas":           0.20,
+    "vasos_4oz":         0.085,
+    "vasos_6oz":         0.643,
+    "vasos_8oz":         0.378,
+    "vasos_total":       1.106,
+    "tapas_6oz_7oz":     0.728,
+    "tapas_8oz":         0.378,
+    "tapas_calientes":   1.106,
+    "tapas_frias":       0.049,
+    "fundas_corrugadas": 0.007,
+    "bolsas_kraft":      0.210,
+    "portavasos_x2":     0.010,
+    "pajitas":           0.049,
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -197,7 +214,7 @@ def save_to_supabase(monday, data, pedidos, week_label):
     if retail_rows:
         sb_upsert("retail_ventas", retail_rows)
 
-    # 6 — desechables (map new ratio keys to DB columns)
+    # 6 — desechables → mapeado a columnas DB existentes
     des = data["desechables"]
     sb_upsert("desechables_estimados", {
         "week_start":        date_str,
@@ -207,6 +224,8 @@ def save_to_supabase(monday, data, pedidos, week_label):
         "bolsas_kraft":      des.get("bolsas_kraft", 0),
         "portavasos_x2":     des.get("portavasos_x2", 0),
         "pajitas":           des.get("pajitas", 0),
+        # extra detail available in raw data but not in DB schema yet:
+        # vasos_4oz, vasos_6oz, vasos_8oz, tapas_6oz_7oz, tapas_8oz, tapas_frias
     })
 
     log.info(f"  Supabase: semana {date_str} guardada")
@@ -333,17 +352,20 @@ def fmt_report(data, pedidos, week_label):
     des = data["desechables"]
     L.append(f"DESECHABLES -- estimacion  ({data['tickets_takeout']} tickets takeout)")
     for k, lbl in {
-        "vasos_6oz":         "Vasos 6oz (espresso/cortado)",
-        "vasos_8oz":         "Vasos 8oz (flat white/capp)",
-        "vasos_total":       "TOTAL vasos",
-        "tapas_calientes":   "Tapas calientes (6oz+8oz)",
-        "tapas_frias":       "Tapas planas PET (frias)",
-        "fundas_corrugadas": "Fundas corrugadas 8oz",
-        "bolsas_kraft":      "Bolsas papel kraft",
+        "vasos_4oz":         "Vasos 4oz (espresso/TALLAT S)",
+        "vasos_6oz":         "Vasos 6oz (capp/flat/long black)",
+        "vasos_8oz":         "Vasos 8oz (cafe leche L/chai/matcha)",
+        "vasos_total":       "TOTAL vasos calientes",
+        "tapas_6oz_7oz":     "Tapas negra 6/7oz",
+        "tapas_8oz":         "Tapas negra/blanca 8oz",
+        "tapas_calientes":   "TOTAL tapas calientes",
+        "tapas_frias":       "Tapas planas PET (iced)",
+        "fundas_corrugadas": "Fundas (long black 1/10)",
+        "bolsas_kraft":      "Bolsas kraft (takeaway boll.)",
         "portavasos_x2":     "Portavasos x2",
         "pajitas":           "Pajitas (bebidas frias)",
     }.items():
-        L.append(f"  {lbl:<30}  ~{des.get(k,0):>4} uds")
+        L.append(f"  {lbl:<34}  ~{des.get(k,0):>4} uds")
     L.append("")
 
     L.append("PEDIDO SUGERIDO -- proxima semana  (+15% buffer)")
@@ -374,10 +396,11 @@ def fmt_whatsapp(data, pedidos, week_label):
             L.append(f"  {n}: {q}")
     des = data["desechables"]
     L += ["", "*Desechables estimados*",
-          f"  Vasos 6oz:  ~{des.get('vasos_6oz',0)}  |  8oz: ~{des.get('vasos_8oz',0)}",
-          f"  Tapas cal.: ~{des.get('tapas_calientes',0)}  |  PET: ~{des.get('tapas_frias',0)}",
-          f"  Fundas:     ~{des.get('fundas_corrugadas',0)}",
-          f"  Bolsas:     ~{des.get('bolsas_kraft',0)}", "",
+          f"  Vasos 4oz: ~{des.get('vasos_4oz',0)}  6oz: ~{des.get('vasos_6oz',0)}  8oz: ~{des.get('vasos_8oz',0)}",
+          f"  Tapas cal. 6/7oz: ~{des.get('tapas_6oz_7oz',0)}  |  8oz: ~{des.get('tapas_8oz',0)}",
+          f"  Tapas PET (frias): ~{des.get('tapas_frias',0)}",
+          f"  Fundas (LB 1/10): ~{des.get('fundas_corrugadas',0)}",
+          f"  Bolsas kraft: ~{des.get('bolsas_kraft',0)}  |  Pajitas: ~{des.get('pajitas',0)}", "",
           "*Pedido sugerido*"]
     for prov, items in pedidos.items():
         L.append(f"*{prov}*")
