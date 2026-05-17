@@ -3,17 +3,16 @@
 tallat_weekly_export.py
 =======================
 Exporta cada domingo a las 23:59 los datos de la semana desde Loyverse.
-Sube automáticamente al Google Drive.
-Incluye modo histórico para rellenar semanas desde enero 2026.
+Guarda todo en Supabase (PostgreSQL en la nube).
 
 Uso:
   python tallat_weekly_export.py              # daemon, cada domingo 23:59
   python tallat_weekly_export.py --once       # ejecuta ahora (semana actual)
-  python tallat_weekly_export.py --backfill   # rellena todas las semanas desde enero 2026
+  python tallat_weekly_export.py --backfill   # rellena desde enero 2026
   python tallat_weekly_export.py --week 2026-04-20  # semana concreta
 """
 
-import os, sys, json, re, time, datetime, smtplib, logging, io, schedule
+import os, sys, json, re, time, datetime, smtplib, logging, schedule
 from collections import defaultdict
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -26,14 +25,6 @@ try:
 except ImportError:
     pass
 
-try:
-    from google.oauth2.service_account import Credentials
-    from googleapiclient.discovery import build
-    from googleapiclient.http import MediaIoBaseUpload
-    GDRIVE_OK = True
-except ImportError:
-    GDRIVE_OK = False
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)s  %(message)s",
@@ -42,24 +33,22 @@ logging.basicConfig(
 log = logging.getLogger("tallat")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CONFIG  (variables de entorno o .env)
+# CONFIG
 # ─────────────────────────────────────────────────────────────────────────────
-LOYVERSE_TOKEN     = os.getenv("LOYVERSE_TOKEN", "")
-STORE_ID           = os.getenv("LOYVERSE_STORE_ID", "")
-SEND_EMAIL         = os.getenv("SEND_EMAIL", "false").lower() == "true"
-EMAIL_FROM         = os.getenv("EMAIL_FROM", "")
-EMAIL_TO           = os.getenv("EMAIL_TO", "")
-EMAIL_PASS         = os.getenv("EMAIL_PASS", "")
-SMTP_HOST          = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT          = int(os.getenv("SMTP_PORT", "587"))
-OUTPUT_DIR         = os.getenv("OUTPUT_DIR", "./output")
-GDRIVE_FOLDER_NAME = os.getenv("GDRIVE_FOLDER_NAME", "Tallat — Reportes Semanales")
-GDRIVE_CREDS_FILE  = os.getenv("GDRIVE_CREDS_FILE", "gdrive_credentials.json")
-GDRIVE_CREDS_JSON  = os.getenv("GDRIVE_CREDS_JSON", "")   # JSON inline para Railway
-GDRIVE_FOLDER_ID   = os.getenv("GDRIVE_FOLDER_ID", "")    # ID carpeta raíz en Drive
-BASE_URL           = "https://api.loyverse.com/v1.0"
+LOYVERSE_TOKEN  = os.getenv("LOYVERSE_TOKEN", "")
+STORE_ID        = os.getenv("LOYVERSE_STORE_ID", "")
+SUPABASE_URL    = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY    = os.getenv("SUPABASE_KEY", "")
+SEND_EMAIL      = os.getenv("SEND_EMAIL", "false").lower() == "true"
+EMAIL_FROM      = os.getenv("EMAIL_FROM", "")
+EMAIL_TO        = os.getenv("EMAIL_TO", "")
+EMAIL_PASS      = os.getenv("EMAIL_PASS", "")
+SMTP_HOST       = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT       = int(os.getenv("SMTP_PORT", "587"))
+OUTPUT_DIR      = os.getenv("OUTPUT_DIR", "/tmp/output")
 
-BACKFILL_START = datetime.date(2026, 1, 5)   # lunes 5 enero 2026
+LOYVERSE_API    = "https://api.loyverse.com/v1.0"
+BACKFILL_START  = datetime.date(2026, 1, 5)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CATÁLOGO — calibrado con datos reales abr-may 2026
@@ -107,8 +96,7 @@ CAFES = {
     "Naranja Coffee Soda", "Dirty Orxata", "Shakerato (---)",
 }
 
-RETAIL_RE = re.compile(r'250g|1[Kk]g', re.IGNORECASE)
-
+RETAIL_RE          = re.compile(r'250g|1[Kk]g', re.IGNORECASE)
 TAKEOUT_RATIO_HIST = 0.523
 DESECHABLES_RATIO  = {
     "vasos_todos":       1.00,
@@ -120,6 +108,104 @@ DESECHABLES_RATIO  = {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# SUPABASE  (REST API — sin librería extra)
+# ─────────────────────────────────────────────────────────────────────────────
+def sb_headers():
+    return {
+        "apikey":        SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type":  "application/json",
+        "Prefer":        "resolution=merge-duplicates",  # upsert
+    }
+
+def sb_upsert(table, rows):
+    """Inserta o actualiza filas en una tabla de Supabase."""
+    if not rows:
+        return
+    if isinstance(rows, dict):
+        rows = [rows]
+    url = f"{SUPABASE_URL}/rest/v1/{table}"
+    r   = requests.post(url, headers=sb_headers(),
+                        json=rows, timeout=15)
+    if r.status_code not in (200, 201):
+        raise Exception(f"Supabase {table}: {r.status_code} {r.text[:200]}")
+
+def sb_delete(table, column, value):
+    """Borra filas donde column = value (para limpiar antes de reinsertar)."""
+    url = f"{SUPABASE_URL}/rest/v1/{table}?{column}=eq.{value}"
+    requests.delete(url, headers=sb_headers(), timeout=15)
+
+def save_to_supabase(monday, data, pedidos, week_label):
+    date_str = monday.isoformat()
+    sunday   = monday + datetime.timedelta(days=6)
+
+    # 1 — semanas (upsert)
+    sb_upsert("semanas", {
+        "week_start":      date_str,
+        "week_end":        sunday.isoformat(),
+        "week_label":      week_label,
+        "tickets_total":   data["tickets_total"],
+        "tickets_takeout": data["tickets_takeout"],
+        "takeout_pct":     data["takeout_pct"],
+        "revenue_eur":     data["revenue_eur"],
+    })
+
+    # 2 — borrar detalles anteriores de esta semana y reinsertar
+    for table in ("bolleria_ventas", "cafe_ventas",
+                  "retail_ventas", "desechables_estimados"):
+        sb_delete(table, "week_start", date_str)
+
+    # 3 — bollería
+    boll_rows = []
+    for prov, items in pedidos.items():
+        for it in items:
+            boll_rows.append({
+                "week_start":  date_str,
+                "proveedor":   prov,
+                "producto":    it["item"],
+                "qty_vendida": it["vendido"],
+                "qty_pedir":   it["pedir"],
+                "avg_hist":    it["avg"],
+            })
+    # añadir productos vendidos que no están en BOLLERIA (por si acaso)
+    for name, qty in data["bolleria"].items():
+        if not any(r["producto"] == name for r in boll_rows):
+            boll_rows.append({
+                "week_start":  date_str,
+                "proveedor":   "OTRO",
+                "producto":    name,
+                "qty_vendida": qty,
+                "qty_pedir":   0,
+                "avg_hist":    0,
+            })
+    if boll_rows:
+        sb_upsert("bolleria_ventas", boll_rows)
+
+    # 4 — cafés
+    cafe_rows = [
+        {"week_start": date_str, "producto": name, "qty_vendida": qty}
+        for name, qty in data["cafes"].items()
+    ]
+    if cafe_rows:
+        sb_upsert("cafe_ventas", cafe_rows)
+
+    # 5 — retail
+    retail_rows = [
+        {"week_start": date_str, "producto": name, "qty_vendida": qty}
+        for name, qty in data["retail"].items()
+    ]
+    if retail_rows:
+        sb_upsert("retail_ventas", retail_rows)
+
+    # 6 — desechables
+    sb_upsert("desechables_estimados", {
+        "week_start":        date_str,
+        **data["desechables"],
+    })
+
+    log.info(f"  Supabase: semana {date_str} guardada")
+
+# ─────────────────────────────────────────────────────────────────────────────
 # LOYVERSE API
 # ─────────────────────────────────────────────────────────────────────────────
 def loyverse_get(endpoint, params):
@@ -128,7 +214,7 @@ def loyverse_get(endpoint, params):
     while True:
         if cursor:
             params = {"cursor": cursor}
-        r = requests.get(f"{BASE_URL}/{endpoint}",
+        r = requests.get(f"{LOYVERSE_API}/{endpoint}",
                          headers=headers, params=params, timeout=30)
         r.raise_for_status()
         data = r.json()
@@ -141,7 +227,7 @@ def loyverse_get(endpoint, params):
             break
     return items
 
-def get_receipts(date_from: datetime.date, date_to: datetime.date):
+def get_receipts(date_from, date_to):
     params = {
         "created_at_min": datetime.datetime.combine(
             date_from, datetime.time.min).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -206,7 +292,7 @@ def pedido_sugerido(bolleria_sold):
     return dict(out)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# FORMATO TEXTO
+# FORMATO TEXTO (para logs y email)
 # ─────────────────────────────────────────────────────────────────────────────
 def fmt_report(data, pedidos, week_label):
     L, sep = [], "=" * 56
@@ -258,7 +344,7 @@ def fmt_report(data, pedidos, week_label):
             L.append(f"    {it['item']:<40} -> {it['pedir']:>4} uds{flag}")
         L.append("")
 
-    L += ["-" * 56, "Script: tallat_weekly_export.py  |  Loyverse API v1.0", sep]
+    L += ["-" * 56, "Datos guardados en Supabase  |  Loyverse API v1.0", sep]
     return "\n".join(L)
 
 def fmt_whatsapp(data, pedidos, week_label):
@@ -290,148 +376,9 @@ def fmt_whatsapp(data, pedidos, week_label):
     return "\n".join(L)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# GOOGLE DRIVE
-# ─────────────────────────────────────────────────────────────────────────────
-_drive_svc    = None
-_folder_cache = {}   # name -> id
-
-def _get_drive():
-    global _drive_svc
-    if _drive_svc:
-        return _drive_svc
-    if not GDRIVE_OK:
-        log.warning("google-auth no instalado — Drive desactivado")
-        return None
-
-    if GDRIVE_CREDS_JSON:
-        import tempfile
-        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
-        tmp.write(GDRIVE_CREDS_JSON); tmp.flush()
-        creds_path = tmp.name
-    else:
-        creds_path = GDRIVE_CREDS_FILE
-
-    if not os.path.exists(creds_path):
-        log.warning(f"Credenciales Drive no encontradas: {creds_path}")
-        return None
-
-    creds = Credentials.from_service_account_file(
-        creds_path, scopes=["https://www.googleapis.com/auth/drive"])
-    _drive_svc = build("drive", "v3", credentials=creds)
-    return _drive_svc
-
-def _folder(svc, name, parent_id):
-    """Busca o crea una subcarpeta dentro de parent_id."""
-    cache_key = f"{parent_id}:{name}"
-    if cache_key in _folder_cache:
-        return _folder_cache[cache_key]
-    q = (f"mimeType='application/vnd.google-apps.folder'"
-         f" and name='{name}'"
-         f" and '{parent_id}' in parents"
-         f" and trashed=false")
-    res = svc.files().list(
-        q=q, fields="files(id)",
-        includeItemsFromAllDrives=True,
-        supportsAllDrives=True,
-    ).execute()
-    files = res.get("files", [])
-    if files:
-        fid = files[0]["id"]
-    else:
-        meta = {
-            "name": name,
-            "mimeType": "application/vnd.google-apps.folder",
-            "parents": [parent_id],
-        }
-        fid = svc.files().create(
-            body=meta, fields="id",
-            supportsAllDrives=True,
-        ).execute()["id"]
-    _folder_cache[cache_key] = fid
-    return fid
-
-def _upload(svc, folder_id, filename, content_str, mime="text/plain"):
-    """Sube o actualiza un archivo en la carpeta indicada."""
-    q = (f"name='{filename}'"
-         f" and '{folder_id}' in parents"
-         f" and trashed=false")
-    res = svc.files().list(
-        q=q, fields="files(id)",
-        includeItemsFromAllDrives=True,
-        supportsAllDrives=True,
-    ).execute()
-    ex  = res.get("files", [])
-    med = MediaIoBaseUpload(
-        io.BytesIO(content_str.encode("utf-8")),
-        mimetype=mime, resumable=False,
-    )
-    if ex:
-        svc.files().update(
-            fileId=ex[0]["id"],
-            media_body=med,
-            supportsAllDrives=True,
-        ).execute()
-    else:
-        svc.files().create(
-            body={"name": filename, "parents": [folder_id]},
-            media_body=med, fields="id",
-            supportsAllDrives=True,
-        ).execute()
-    log.info(f"  Drive: {filename}")
-
-def _update_index(svc, root_id, date_str, week_label, raw):
-    fname = "indice_semanas.json"
-    q     = f"name='{fname}' and '{root_id}' in parents and trashed=false"
-    ex    = svc.files().list(
-        q=q, fields="files(id)",
-        includeItemsFromAllDrives=True,
-        supportsAllDrives=True,
-    ).execute().get("files", [])
-    index = {}
-    if ex:
-        try:
-            content = svc.files().get_media(fileId=ex[0]["id"]).execute()
-            index   = json.loads(content.decode("utf-8"))
-        except Exception:
-            pass
-    index[date_str] = {
-        "semana":       week_label,
-        "tickets":      raw["tickets_total"],
-        "takeout_pct":  raw["takeout_pct"],
-        "revenue_eur":  raw["revenue_eur"],
-        "top_bolleria": list(raw["bolleria"].items())[:5],
-        "top_cafes":    list(raw["cafes"].items())[:5],
-        "total_retail": sum(raw["retail"].values()),
-    }
-    _upload(svc, root_id, fname,
-            json.dumps(index, ensure_ascii=False, indent=2), "application/json")
-
-def upload_to_drive(week_label, date_str, report, wa, raw):
-    svc = _get_drive()
-    if not svc:
-        return
-    if not GDRIVE_FOLDER_ID:
-        log.warning("  GDRIVE_FOLDER_ID no configurado — Drive desactivado")
-        return
-    try:
-        # Usamos directamente el ID de la carpeta compartida en el Drive personal
-        root_id = GDRIVE_FOLDER_ID
-        year_id = _folder(svc, "2026", root_id)
-        week_id = _folder(svc, f"semana_{date_str}", year_id)
-
-        _upload(svc, week_id, f"reporte_{date_str}.txt",  report)
-        _upload(svc, week_id, f"whatsapp_{date_str}.txt", wa)
-        _upload(svc, week_id, f"datos_{date_str}.json",
-                json.dumps(raw, ensure_ascii=False, indent=2), "application/json")
-        _update_index(svc, root_id, date_str, week_label, raw)
-        log.info(f"  Drive: semana {date_str} completa")
-    except Exception as e:
-        log.error(f"  Drive error: {e}")
-
-# ─────────────────────────────────────────────────────────────────────────────
 # GUARDADO LOCAL + EMAIL
 # ─────────────────────────────────────────────────────────────────────────────
-def save_local(report, wa, raw, date_str):
+def save_local(report, wa, date_str):
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     for fname, txt in [
         (f"reporte_{date_str}.txt",  report),
@@ -439,8 +386,6 @@ def save_local(report, wa, raw, date_str):
     ]:
         with open(os.path.join(OUTPUT_DIR, fname), "w", encoding="utf-8") as f:
             f.write(txt)
-    with open(os.path.join(OUTPUT_DIR, f"datos_{date_str}.json"), "w", encoding="utf-8") as f:
-        json.dump(raw, f, ensure_ascii=False, indent=2)
 
 def send_email_report(subject, body):
     if not SEND_EMAIL or not EMAIL_FROM:
@@ -464,8 +409,11 @@ def process_week(monday: datetime.date):
     week_label = f"{monday.strftime('%d/%m')} – {sunday.strftime('%d/%m/%Y')}"
 
     log.info(f"=== Semana {week_label} ===")
+
     if not LOYVERSE_TOKEN:
         log.error("LOYVERSE_TOKEN no configurado"); return False
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        log.error("SUPABASE_URL o SUPABASE_KEY no configurados"); return False
 
     try:
         receipts = get_receipts(monday, sunday)
@@ -476,13 +424,12 @@ def process_week(monday: datetime.date):
         report  = fmt_report(data, pedidos, week_label)
         wa      = fmt_whatsapp(data, pedidos, week_label)
 
-        raw = {**data, "week_label": week_label, "date_str": date_str,
-               "pedido_sugerido": pedidos}
-        del raw["otros_top10"]   # no necesario en el índice
-
-        save_local(report, wa, raw, date_str)
-        upload_to_drive(week_label, date_str, report, wa, raw)
+        save_local(report, wa, date_str)
+        save_to_supabase(monday, data, pedidos, week_label)
         send_email_report(f"Tallat Coffee -- Resumen {week_label}", report)
+
+        # Mostrar versión WhatsApp en logs para copiar fácilmente
+        log.info("\n── WHATSAPP ──\n" + wa + "\n──────────────")
         return True
 
     except requests.HTTPError as e:
@@ -507,7 +454,7 @@ def backfill():
         if process_week(mon): ok += 1
         else:                 fail += 1
         if i < len(weeks): time.sleep(2)
-    log.info(f"Backfill: {ok} OK / {fail} errores")
+    log.info(f"Backfill completado: {ok} OK / {fail} errores")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # MAIN
