@@ -296,6 +296,7 @@ def analyse(receipts):
     revenue  = 0.0
 
     retail_debug = []
+    raw_logged = False
     for r in receipts:
         if r.get("cancelled_at"):
             continue
@@ -304,19 +305,29 @@ def analyse(receipts):
             takeout_t += 1
         revenue += float(r.get("total_money") or 0)
         for line in r.get("line_items", []):
-            name = (line.get("item_name") or "").strip()
-            qty  = int(line.get("quantity") or 1)
-            if   name in BOLLERIA:       bolleria[name] += qty
-            elif name in CAFES:          cafes[name]    += qty
-            elif RETAIL_RE.search(name):
-                retail[name]   += qty
-                retail_debug.append(name)
-            else:                        otros[name]    += qty
+            name    = (line.get("item_name") or "").strip()
+            qty     = int(line.get("quantity") or 1)
+            variant = (line.get("variant_name") or "").strip()
+            # Log raw structure of first few lines to understand API format
+            if not raw_logged and total_t <= 3:
+                log.info(f"  RAW line: item_name={repr(name)} variant={repr(variant)} keys={list(line.keys())}")
+                raw_logged = True
+            # Try matching name OR name+variant
+            full_name = f"{name} ({variant})" if variant and variant not in name else name
+            if   name in BOLLERIA or full_name in BOLLERIA:
+                bolleria[full_name if full_name in BOLLERIA else name] += qty
+            elif name in CAFES or full_name in CAFES:
+                cafes[full_name if full_name in CAFES else name]       += qty
+            elif RETAIL_RE.search(name) or RETAIL_RE.search(full_name):
+                key = full_name if RETAIL_RE.search(full_name) else name
+                retail[key] += qty
+                retail_debug.append(key)
+            else:
+                otros[full_name] += qty
     if retail_debug:
-        log.info(f"  Retail encontrado: {len(retail_debug)} lineas — {list(set(retail_debug))[:3]}")
+        log.info(f"  Retail encontrado: {len(set(retail_debug))} items — {list(set(retail_debug))[:3]}")
     else:
-        # Show sample of otros to debug
-        otros_sample = list(otros.keys())[:5]
+        otros_sample = list(otros.keys())[:8]
         log.info(f"  Retail: 0. Muestra otros: {otros_sample}")
 
     des_base = takeout_t or round(total_t * TAKEOUT_RATIO_HIST)
