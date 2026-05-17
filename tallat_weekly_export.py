@@ -295,6 +295,7 @@ def analyse(receipts):
     total_t  = takeout_t = 0
     revenue  = 0.0
 
+    retail_debug = []
     for r in receipts:
         if r.get("cancelled_at"):
             continue
@@ -307,8 +308,16 @@ def analyse(receipts):
             qty  = int(line.get("quantity") or 1)
             if   name in BOLLERIA:       bolleria[name] += qty
             elif name in CAFES:          cafes[name]    += qty
-            elif RETAIL_RE.search(name): retail[name]   += qty
+            elif RETAIL_RE.search(name):
+                retail[name]   += qty
+                retail_debug.append(name)
             else:                        otros[name]    += qty
+    if retail_debug:
+        log.info(f"  Retail encontrado: {len(retail_debug)} lineas — {list(set(retail_debug))[:3]}")
+    else:
+        # Show sample of otros to debug
+        otros_sample = list(otros.keys())[:5]
+        log.info(f"  Retail: 0. Muestra otros: {otros_sample}")
 
     des_base = takeout_t or round(total_t * TAKEOUT_RATIO_HIST)
     return {
