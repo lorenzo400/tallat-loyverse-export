@@ -135,15 +135,23 @@ def sb_headers():
         "Prefer":        "resolution=merge-duplicates",  # upsert
     }
 
-def sb_upsert(table, rows):
-    """Inserta o actualiza filas en una tabla de Supabase."""
+def sb_upsert(table, rows, on_conflict="week_start"):
+    """Inserta o actualiza filas en una tabla de Supabase (upsert real)."""
     if not rows:
         return
     if isinstance(rows, dict):
         rows = [rows]
     url = f"{SUPABASE_URL}/rest/v1/{table}"
-    r   = requests.post(url, headers=sb_headers(),
-                        json=rows, timeout=15)
+    headers = {
+        "apikey":        SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type":  "application/json",
+        "Prefer":        f"resolution=merge-duplicates,return=minimal",
+    }
+    r = requests.post(
+        f"{url}?on_conflict={on_conflict}",
+        headers=headers, json=rows, timeout=15
+    )
     if r.status_code not in (200, 201):
         raise Exception(f"Supabase {table}: {r.status_code} {r.text[:200]}")
 
