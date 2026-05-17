@@ -135,23 +135,37 @@ def sb_headers():
         "Prefer":        "resolution=merge-duplicates",  # upsert
     }
 
-def sb_upsert(table, rows, on_conflict="week_start"):
-    """Inserta o actualiza filas en una tabla de Supabase (upsert real)."""
+def sb_insert(table, rows):
+    """INSERT simple — para tablas hijo donde se hace DELETE antes."""
     if not rows:
         return
     if isinstance(rows, dict):
         rows = [rows]
-    url = f"{SUPABASE_URL}/rest/v1/{table}"
     headers = {
         "apikey":        SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type":  "application/json",
-        "Prefer":        f"resolution=merge-duplicates,return=minimal",
+        "Prefer":        "return=minimal",
     }
-    r = requests.post(
-        f"{url}?on_conflict={on_conflict}",
-        headers=headers, json=rows, timeout=15
-    )
+    r = requests.post(f"{SUPABASE_URL}/rest/v1/{table}",
+                      headers=headers, json=rows, timeout=15)
+    if r.status_code not in (200, 201):
+        raise Exception(f"Supabase {table}: {r.status_code} {r.text[:200]}")
+
+def sb_upsert(table, rows, on_conflict="week_start"):
+    """UPSERT para tablas con unique constraint (semanas, desechables_estimados)."""
+    if not rows:
+        return
+    if isinstance(rows, dict):
+        rows = [rows]
+    headers = {
+        "apikey":        SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type":  "application/json",
+        "Prefer":        "resolution=merge-duplicates,return=minimal",
+    }
+    r = requests.post(f"{SUPABASE_URL}/rest/v1/{table}?on_conflict={on_conflict}",
+                      headers=headers, json=rows, timeout=15)
     if r.status_code not in (200, 201):
         raise Exception(f"Supabase {table}: {r.status_code} {r.text[:200]}")
 
@@ -204,7 +218,7 @@ def save_to_supabase(monday, data, pedidos, week_label):
                 "avg_hist":    0,
             })
     if boll_rows:
-        sb_upsert("bolleria_ventas", boll_rows)
+        sb_insert("bolleria_ventas", boll_rows)
 
     # 4 — cafés
     cafe_rows = [
@@ -212,7 +226,7 @@ def save_to_supabase(monday, data, pedidos, week_label):
         for name, qty in data["cafes"].items()
     ]
     if cafe_rows:
-        sb_upsert("cafe_ventas", cafe_rows)
+        sb_insert("cafe_ventas", cafe_rows)
 
     # 5 — retail
     retail_rows = [
@@ -220,7 +234,7 @@ def save_to_supabase(monday, data, pedidos, week_label):
         for name, qty in data["retail"].items()
     ]
     if retail_rows:
-        sb_upsert("retail_ventas", retail_rows)
+        sb_insert("retail_ventas", retail_rows)
 
     # 6 — desechables → mapeado a columnas DB existentes
     des = data["desechables"]
