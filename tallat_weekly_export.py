@@ -197,10 +197,16 @@ def save_to_supabase(monday, data, pedidos, week_label):
     if retail_rows:
         sb_upsert("retail_ventas", retail_rows)
 
-    # 6 — desechables
+    # 6 — desechables (map new ratio keys to DB columns)
+    des = data["desechables"]
     sb_upsert("desechables_estimados", {
         "week_start":        date_str,
-        **data["desechables"],
+        "vasos_todos":       des.get("vasos_total", 0),
+        "tapas_calientes":   des.get("tapas_calientes", 0),
+        "fundas_corrugadas": des.get("fundas_corrugadas", 0),
+        "bolsas_kraft":      des.get("bolsas_kraft", 0),
+        "portavasos_x2":     des.get("portavasos_x2", 0),
+        "pajitas":           des.get("pajitas", 0),
     })
 
     log.info(f"  Supabase: semana {date_str} guardada")
@@ -324,16 +330,20 @@ def fmt_report(data, pedidos, week_label):
             L.append(f"  {name:<44} {qty:>4}")
         L += [f"  {'TOTAL':<44} {sum(data['retail'].values()):>4}", ""]
 
+    des = data["desechables"]
     L.append(f"DESECHABLES -- estimacion  ({data['tickets_takeout']} tickets takeout)")
     for k, lbl in {
-        "vasos_todos":       "Vasos (todos los tamanos)",
-        "tapas_calientes":   "Tapas calientes",
+        "vasos_6oz":         "Vasos 6oz (espresso/cortado)",
+        "vasos_8oz":         "Vasos 8oz (flat white/capp)",
+        "vasos_total":       "TOTAL vasos",
+        "tapas_calientes":   "Tapas calientes (6oz+8oz)",
+        "tapas_frias":       "Tapas planas PET (frias)",
         "fundas_corrugadas": "Fundas corrugadas 8oz",
         "bolsas_kraft":      "Bolsas papel kraft",
         "portavasos_x2":     "Portavasos x2",
-        "pajitas":           "Pajitas (frias)",
+        "pajitas":           "Pajitas (bebidas frias)",
     }.items():
-        L.append(f"  {lbl:<30}  ~{data['desechables'][k]:>4} uds")
+        L.append(f"  {lbl:<30}  ~{des.get(k,0):>4} uds")
     L.append("")
 
     L.append("PEDIDO SUGERIDO -- proxima semana  (+15% buffer)")
@@ -362,11 +372,12 @@ def fmt_whatsapp(data, pedidos, week_label):
         L += ["", "*Retail cafe*"]
         for n, q in list(data["retail"].items())[:6]:
             L.append(f"  {n}: {q}")
+    des = data["desechables"]
     L += ["", "*Desechables estimados*",
-          f"  Vasos:  ~{data['desechables']['vasos_todos']}",
-          f"  Tapas:  ~{data['desechables']['tapas_calientes']}",
-          f"  Fundas: ~{data['desechables']['fundas_corrugadas']}",
-          f"  Bolsas: ~{data['desechables']['bolsas_kraft']}", "",
+          f"  Vasos 6oz:  ~{des.get('vasos_6oz',0)}  |  8oz: ~{des.get('vasos_8oz',0)}",
+          f"  Tapas cal.: ~{des.get('tapas_calientes',0)}  |  PET: ~{des.get('tapas_frias',0)}",
+          f"  Fundas:     ~{des.get('fundas_corrugadas',0)}",
+          f"  Bolsas:     ~{des.get('bolsas_kraft',0)}", "",
           "*Pedido sugerido*"]
     for prov, items in pedidos.items():
         L.append(f"*{prov}*")
