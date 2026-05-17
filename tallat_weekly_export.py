@@ -236,9 +236,9 @@ def save_to_supabase(monday, data, pedidos, week_label):
     if retail_rows:
         sb_insert("retail_ventas", retail_rows)
 
-    # 6 — desechables → mapeado a columnas DB existentes
+    # 6 — desechables → INSERT (DELETE ya hecho arriba en línea 194)
     des = data["desechables"]
-    sb_upsert("desechables_estimados", {
+    sb_insert("desechables_estimados", {
         "week_start":        date_str,
         "vasos_todos":       des.get("vasos_total", 0),
         "tapas_calientes":   des.get("tapas_calientes", 0),
@@ -246,8 +246,6 @@ def save_to_supabase(monday, data, pedidos, week_label):
         "bolsas_kraft":      des.get("bolsas_kraft", 0),
         "portavasos_x2":     des.get("portavasos_x2", 0),
         "pajitas":           des.get("pajitas", 0),
-        # extra detail available in raw data but not in DB schema yet:
-        # vasos_4oz, vasos_6oz, vasos_8oz, tapas_6oz_7oz, tapas_8oz, tapas_frias
     })
 
     log.info(f"  Supabase: semana {date_str} guardada")
