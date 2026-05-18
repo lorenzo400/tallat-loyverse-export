@@ -295,8 +295,6 @@ def analyse(receipts):
     total_t  = takeout_t = 0
     revenue  = 0.0
 
-    retail_debug = []
-    raw_logged = False
     for r in receipts:
         if r.get("cancelled_at"):
             continue
@@ -308,11 +306,7 @@ def analyse(receipts):
             name    = (line.get("item_name") or "").strip()
             qty     = int(line.get("quantity") or 1)
             variant = (line.get("variant_name") or "").strip()
-            # Log raw structure of first few lines to understand API format
-            if not raw_logged and total_t <= 3:
-                log.info(f"  RAW line: item_name={repr(name)} variant={repr(variant)} keys={list(line.keys())}")
-                raw_logged = True
-            # Try matching name OR name+variant
+            # La API de Loyverse separa nombre y variante: combinar para matching
             full_name = f"{name} ({variant})" if variant and variant not in name else name
             if   name in BOLLERIA or full_name in BOLLERIA:
                 bolleria[full_name if full_name in BOLLERIA else name] += qty
@@ -321,14 +315,8 @@ def analyse(receipts):
             elif RETAIL_RE.search(name) or RETAIL_RE.search(full_name):
                 key = full_name if RETAIL_RE.search(full_name) else name
                 retail[key] += qty
-                retail_debug.append(key)
             else:
                 otros[full_name] += qty
-    if retail_debug:
-        log.info(f"  Retail encontrado: {len(set(retail_debug))} items — {list(set(retail_debug))[:3]}")
-    else:
-        otros_sample = list(otros.keys())[:8]
-        log.info(f"  Retail: 0. Muestra otros: {otros_sample}")
 
     des_base = takeout_t or round(total_t * TAKEOUT_RATIO_HIST)
     return {
