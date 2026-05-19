@@ -157,6 +157,56 @@ main { max-width:1200px; margin:0 auto; padding:24px 32px 64px; display:grid; gr
 .connect-btn { width:100%; background:var(--orange); color:white; border:none; padding:10px; font-family:var(--mono); font-size:12px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; cursor:pointer; }
 .connect-btn:hover { background:var(--orange2); }
 
+
+/* MOBILE */
+@media (max-width: 700px) {
+  header {
+    padding: 10px 14px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  #sync-info { order: 3; width: 100%; text-align: left; border-top: 1px solid var(--rule); padding-top: 6px; margin-top: 2px; }
+  .week-nav { gap: 6px; }
+  .week-display { min-width: 0; font-size: 11px; }
+  .today-btn { padding: 5px 10px; font-size: 10px; }
+
+  .week-chips { padding: 6px 14px; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .week-chips::-webkit-scrollbar { display: none; }
+
+  main { grid-template-columns: 1fr; padding: 12px 14px 48px; gap: 12px; }
+  .section.full, .section.general, .section.des { grid-column: 1; }
+
+  .gen-grid { grid-template-columns: repeat(2, 1fr); }
+  .gen-cell { padding: 12px 14px; }
+  .gen-val { font-size: 20px; }
+
+  .des-grid { grid-template-columns: repeat(2, 1fr); }
+  .des-cell:nth-child(3n)        { border-right: 1px solid var(--rule); }
+  .des-cell:nth-child(2n)        { border-right: none; }
+  .des-cell:nth-last-child(-n+3) { border-bottom: 1px solid var(--rule); }
+  .des-cell:nth-last-child(-n+2) { border-bottom: none; }
+  .des-cell:last-child           { border-bottom: none; }
+
+  .cons-grid { grid-template-columns: 1fr; }
+  .cons-cell { border-right: none; border-bottom: 1px solid var(--rule); }
+  .cons-cell:last-child { border-bottom: none; }
+  .cons-big { font-size: 26px; }
+
+  .stock-head-row,
+  .stock-row { grid-template-columns: 1fr 50px 44px 44px 52px; padding: 6px 10px; }
+  .stock-head-row span { font-size: 8px; letter-spacing: 0; }
+  .stock-name { font-size: 12px; }
+  .stock-format { font-size: 10px; }
+  .stock-cell { font-size: 11px; }
+  .stock-cell.entrada input,
+  .stock-cell.ajuste input { width: 40px; font-size: 11px; padding: 2px 3px; }
+
+  .dtable td { padding: 7px 12px; font-size: 12px; }
+  .dtable td:last-child { font-size: 11px; }
+  .sec-head { padding: 9px 12px; }
+  .bar-bg { display: none; }
+}
+
 /* STATUS */
 .status-bar { position:fixed; bottom:14px; right:24px; font-family:var(--mono); font-size:10px; color:var(--dim); display:flex; align-items:center; gap:6px; }
 .sdot { width:6px; height:6px; border-radius:50%; background:var(--green); }
