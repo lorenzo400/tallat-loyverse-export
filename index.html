@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tallat — Ventas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:     #F5F2EE;
+  --paper:  #FDFCFA;
+  --ink:    #1A1714;
+  --muted:  #7A736A;
+  --dim:    #B0A89E;
+  --rule:   #E4DDD6;
+  --orange: #C9602A;
+  --orange2:#E8874A;
+  --green:  #3A7A52;
+  --blue:   #2A5C8A;
+  --purple: #6A4A8A;
+  --teal:   #2A7A6A;
+  --mono:   'DM Mono', monospace;
+  --sans:   'DM Sans', sans-serif;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:var(--sans); background:var(--bg); color:var(--ink); min-height:100vh; font-size:14px; }
+
+/* HEADER */
+header {
+  background:var(--paper); border-bottom:1px solid var(--rule);
+  padding:14px 32px; display:flex; align-items:center;
+  justify-content:space-between; position:sticky; top:0; z-index:50;
+}
+.logo { font-family:var(--mono); font-size:13px; font-weight:500; letter-spacing:.12em; text-transform:uppercase; color:var(--orange); }
+.week-nav { display:flex; align-items:center; gap:10px; }
+.week-display { font-family:var(--mono); font-size:13px; color:var(--ink); min-width:180px; text-align:center; font-weight:500; }
+.nav-btn { background:none; border:1px solid var(--rule); color:var(--muted); width:28px; height:28px; cursor:pointer; font-size:16px; border-radius:2px; display:flex; align-items:center; justify-content:center; transition:all .15s; }
+.nav-btn:hover:not(:disabled) { border-color:var(--orange); color:var(--orange); }
+.nav-btn:disabled { opacity:.25; cursor:default; }
+.today-btn { font-family:var(--mono); font-size:11px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; background:var(--orange); color:white; border:none; padding:6px 14px; cursor:pointer; border-radius:2px; }
+.today-btn:hover { background:var(--orange2); }
+.cfg-btn { background:none; border:1px solid var(--rule); color:var(--dim); width:28px; height:28px; cursor:pointer; font-size:14px; border-radius:2px; display:flex; align-items:center; justify-content:center; }
+.cfg-btn:hover { color:var(--muted); }
+
+/* WEEK CHIPS */
+.week-chips { background:var(--paper); border-bottom:1px solid var(--rule); padding:8px 32px; display:flex; gap:5px; flex-wrap:wrap; }
+.chip { font-family:var(--mono); font-size:10px; font-weight:500; padding:3px 9px; border:1px solid var(--rule); background:transparent; color:var(--muted); cursor:pointer; border-radius:2px; letter-spacing:.06em; white-space:nowrap; transition:all .12s; }
+.chip:hover { border-color:var(--orange2); color:var(--orange); }
+.chip.active { background:var(--orange); border-color:var(--orange); color:white; }
+
+/* MAIN GRID */
+main { max-width:1200px; margin:0 auto; padding:24px 32px 64px; display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+
+/* SECTION */
+.section { background:var(--paper); border:1px solid var(--rule); }
+.section.full { grid-column:1/-1; }
+.sec-head { display:flex; align-items:center; justify-content:space-between; padding:11px 16px; border-bottom:1px solid var(--rule); background:var(--bg); }
+.sec-title { font-family:var(--mono); font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:.14em; color:var(--muted); }
+.sec-total { font-family:var(--mono); font-size:12px; font-weight:500; color:var(--ink); }
+
+/* DATA TABLE */
+.dtable { width:100%; border-collapse:collapse; }
+.dtable tr { border-bottom:1px solid var(--rule); transition:background .1s; }
+.dtable tr:last-child { border-bottom:none; }
+.dtable tr:hover { background:rgba(201,96,42,.04); }
+.dtable td { padding:8px 16px; font-size:13px; }
+.dtable td:last-child { text-align:right; font-family:var(--mono); font-size:12px; font-weight:500; white-space:nowrap; }
+.dtable .sub { font-size:11px; color:var(--dim); display:block; margin-top:1px; }
+.prov { display:inline-block; font-family:var(--mono); font-size:9px; font-weight:500; letter-spacing:.08em; padding:1px 5px; border-radius:2px; margin-right:6px; vertical-align:middle; }
+.prov.flora   { background:rgba(201,96,42,.1); color:var(--orange); }
+.prov.panesco { background:rgba(42,92,138,.1); color:var(--blue); }
+.prov.clem    { background:rgba(106,74,138,.1); color:var(--purple); }
+.bar-wrap { display:flex; align-items:center; gap:8px; }
+.bar-bg { flex:1; height:3px; background:var(--rule); border-radius:1px; overflow:hidden; }
+.bar-fill { height:100%; border-radius:1px; transition:width .4s ease; }
+
+/* GENERAL ROW */
+.section.general { grid-column:1/-1; }
+.gen-grid { display:grid; grid-template-columns:repeat(4,1fr); }
+.gen-cell { padding:14px 20px; border-right:1px solid var(--rule); }
+.gen-cell:last-child { border-right:none; }
+.gen-label { font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:.12em; color:var(--dim); margin-bottom:5px; }
+.gen-val { font-family:var(--mono); font-size:22px; font-weight:500; color:var(--ink); line-height:1; }
+.gen-val.orange { color:var(--orange); }
+
+/* DESECHABLES */
+.section.des { grid-column:1/-1; }
+.des-grid { display:grid; grid-template-columns:repeat(3,1fr); }
+.des-cell { padding:14px 16px; border-right:1px solid var(--rule); border-bottom:1px solid var(--rule); }
+.des-cell:nth-child(3n) { border-right:none; }
+.des-cell:nth-last-child(-n+3) { border-bottom:none; }
+.des-label { font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:.12em; color:var(--dim); margin-bottom:5px; }
+.des-val { font-family:var(--mono); font-size:20px; font-weight:500; color:var(--ink); line-height:1; }
+.des-sub { font-size:11px; color:var(--muted); margin-top:3px; }
+
+/* CONSUMIBLES (cold brew + matcha) */
+.cons-grid { display:grid; grid-template-columns:1fr 1fr; }
+.cons-cell { padding:18px 18px; border-right:1px solid var(--rule); }
+.cons-cell:last-child { border-right:none; }
+.cons-label { font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:.12em; color:var(--dim); margin-bottom:8px; }
+.cons-big { font-family:var(--mono); font-size:32px; font-weight:500; color:var(--teal); line-height:1; }
+.cons-unit { font-family:var(--mono); font-size:12px; color:var(--muted); margin-top:4px; }
+.cons-breakdown { margin-top:12px; border-top:1px solid var(--rule); padding-top:10px; }
+.cons-row { display:flex; justify-content:space-between; padding:2px 0; font-size:12px; color:var(--muted); }
+.cons-row span:last-child { font-family:var(--mono); color:var(--ink); }
+
+/* RETAIL STOCK */
+.stock-head-row {
+  display:grid; grid-template-columns:1fr 80px 70px 70px 80px;
+  gap:0; padding:8px 16px; background:var(--bg);
+  border-bottom:1px solid var(--rule);
+}
+.stock-head-row span { font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:.1em; color:var(--dim); text-align:right; }
+.stock-head-row span:first-child { text-align:left; }
+.stock-row {
+  display:grid; grid-template-columns:1fr 80px 70px 70px 80px;
+  gap:0; padding:7px 16px; border-bottom:1px solid var(--rule);
+  align-items:center; transition:background .1s;
+}
+.stock-row:last-child { border-bottom:none; }
+.stock-row:hover { background:rgba(201,96,42,.03); }
+.stock-name { font-size:13px; color:var(--ink); }
+.stock-format { font-size:11px; color:var(--dim); display:block; }
+.stock-cell { text-align:right; font-family:var(--mono); font-size:12px; color:var(--ink); }
+.stock-cell.ajuste input {
+  width:54px; text-align:right; font-family:var(--mono); font-size:12px;
+  border:1px solid var(--rule); background:var(--bg); color:var(--ink);
+  padding:3px 6px; border-radius:2px; outline:none;
+}
+.stock-cell.ajuste input:focus { border-color:var(--purple); }
+.stock-cell.entrada input {
+  width:54px; text-align:right; font-family:var(--mono); font-size:12px;
+  border:1px solid var(--rule); background:var(--bg); color:var(--ink);
+  padding:3px 6px; border-radius:2px; outline:none;
+}
+.stock-cell.entrada input:focus { border-color:var(--orange); }
+.stock-cell.stock-restante { font-weight:500; }
+.stock-cell.stock-restante.bajo { color:#c04040; }
+.stock-cell.stock-restante.ok   { color:var(--green); }
+.save-row { padding:10px 16px; display:flex; justify-content:flex-end; gap:8px; background:var(--bg); border-top:1px solid var(--rule); }
+.save-btn { font-family:var(--mono); font-size:10px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; background:var(--orange); color:white; border:none; padding:6px 16px; cursor:pointer; border-radius:2px; }
+.save-btn:hover { background:var(--orange2); }
+.reset-btn { font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; background:none; color:var(--muted); border:1px solid var(--rule); padding:6px 12px; cursor:pointer; border-radius:2px; }
+.reset-btn:hover { color:var(--ink); border-color:var(--muted); }
+.saved-badge { font-family:var(--mono); font-size:10px; color:var(--green); display:none; align-items:center; gap:4px; }
+.saved-badge.show { display:flex; }
+
+/* MODAL */
+.overlay { position:fixed; inset:0; background:rgba(26,23,20,.6); z-index:100; display:flex; align-items:center; justify-content:center; }
+.modal { background:var(--paper); border:1px solid var(--rule); padding:32px 36px; width:460px; max-width:90vw; }
+.modal h2 { font-family:var(--mono); font-size:12px; font-weight:500; text-transform:uppercase; letter-spacing:.12em; color:var(--orange); margin-bottom:6px; }
+.modal p { font-size:12px; color:var(--muted); margin-bottom:24px; line-height:1.7; }
+.modal label { display:block; font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); margin-bottom:5px; }
+.modal input { width:100%; background:var(--bg); border:1px solid var(--rule); color:var(--ink); padding:9px 12px; font-family:var(--mono); font-size:12px; margin-bottom:16px; outline:none; }
+.modal input:focus { border-color:var(--orange); }
+.connect-btn { width:100%; background:var(--orange); color:white; border:none; padding:10px; font-family:var(--mono); font-size:12px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; cursor:pointer; }
+.connect-btn:hover { background:var(--orange2); }
+
+/* STATUS */
+.status-bar { position:fixed; bottom:14px; right:24px; font-family:var(--mono); font-size:10px; color:var(--dim); display:flex; align-items:center; gap:6px; }
+.sdot { width:6px; height:6px; border-radius:50%; background:var(--green); }
+.sdot.err { background:#c04040; }
+
+.empty { padding:24px 16px; text-align:center; font-family:var(--mono); font-size:11px; color:var(--dim); }
+</style>
+</head>
+<body>
+
+<div class="overlay" id="modal">
+  <div class="modal">
+    <h2>Tallat Coffee</h2>
+    <p>Credenciales de Supabase. Se guardan en tu navegador.</p>
+    <label>Supabase Project URL</label>
+    <input type="text" id="cfg-url" placeholder="https://xxxx.supabase.co">
+    <label>Supabase Anon Key</label>
+    <input type="text" id="cfg-key" placeholder="eyJhbGci...">
+    <button class="connect-btn" onclick="saveConfig()">Conectar</button>
+  </div>
+</div>
+
+<header>
+  <div class="logo">Tallat ☕ Ventas</div>
+  <div id="sync-info" style="font-family:var(--mono);font-size:10px;color:var(--dim);text-align:center;line-height:1.5">
+    <div style="color:var(--muted)">Última sincronización</div>
+    <div id="sync-date" style="color:var(--ink);font-weight:500">—</div>
+  </div>
+  <div class="week-nav">
+    <button class="nav-btn" id="btn-prev" onclick="navWeek(-1)">‹</button>
+    <div class="week-display" id="week-label">—</div>
+    <button class="nav-btn" id="btn-next" onclick="navWeek(+1)">›</button>
+    <button class="today-btn" onclick="navLatest()">Hoy</button>
+    <button class="cfg-btn" onclick="showModal()">⚙</button>
+  </div>
+</header>
+
+<div class="week-chips" id="chips"></div>
+<main id="grid"><div class="empty" style="grid-column:1/-1">Conectando…</div></main>
+
+<div class="status-bar"><div class="sdot" id="sdot"></div><span id="stxt">—</span></div>
+
+<script>
+// ── CONFIG ─────────────────────────────────────────────────
+let SB_URL = localStorage.getItem('sb_url') || '';
+let SB_KEY = localStorage.getItem('sb_key') || '';
+
+// ── RETAIL CATALOG ─────────────────────────────────────────
+const RETAIL_CATALOG = [
+  { name:'El Palto',       origin:'Perú' },
+  { name:'Kickstart',      origin:'Etiopía' },
+  { name:'Finca Noruega',  origin:'El Salvador' },
+  { name:'Guayabos',       origin:'Colombia' },
+  { name:'Kanya',          origin:'Ruanda' },
+  { name:'Rugamba 205',    origin:'Ruanda' },
+  { name:'Lala Salama 03', origin:'Etiopía Decaf' },
+  { name:'Tuang',          origin:'—' },
+];
+const FORMATS = ['250g','1kg'];
+
+// ── BOLLERÍA ───────────────────────────────────────────────
+const BOLL_PROV = {
+  'Galleta chips choco negro':'FLORA','Galleta de avena':'FLORA','Brownie':'FLORA',
+  'Muffin Banana y Arándanos':'FLORA','Muffin Coco y Chocolate (vegano)':'FLORA',
+  'Banana Bread vegano con chocolate':'FLORA','Plum Cake Limón':'FLORA',
+  'Plum Cake Mandarina':'FLORA','Bizcocho zanahoria':'FLORA',
+  'Croissant (Plain)':'PANESCO','Pain au Chocolat':'PANESCO',
+  'W Croissant':'PANESCO','W Pain au Chocolat':'PANESCO',
+  'Cookie Choco Pistacho GF':'CLEM','Cookie Cacahuete':'CLEM','Rollo canela':'CLEM',
+};
+
+// ── COLD BREW CALC (ml de concentrado por bebida) ──────────
+// Envase = 5.000 ml concentrado
+const COLD_BREW_ML = {
+  'Cold Brew (Small)':     50,
+  'Cold Brew (Large)':     50,   // misma porción (100ml total, 50ml concentrado)
+  'Freddo Espresso (-)':    0,   // no usa cold brew
+  'Freddo Cappuccino':      0,
+  'Dirty Orxata':         150,   // 150ml concentrado
+  'Espresso Tonic':         0,
+  'Naranja Coffee Soda':    0,
+};
+const CB_ENVASE_ML = 5000;
+
+// ── MATCHA CALC (g por bebida) ─────────────────────────────
+const MATCHA_G_PER = 1.5;  // todas las bebidas con matcha
+const MATCHA_ITEMS = new Set([
+  'Matcha Latte','Matcha Orange','Matcha Tonic',
+  'Iced Matcha Latte',
+]);
+
+// ── STATE ──────────────────────────────────────────────────
+let weeks=[], bollData={}, cafeData={}, retailData={}, desechData={};
+let curIdx = 0;
+
+// ── SUPABASE ───────────────────────────────────────────────
+async function sb(table, params='') {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, {
+    headers:{ apikey:SB_KEY, Authorization:`Bearer ${SB_KEY}` }
+  });
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+// ── INIT ───────────────────────────────────────────────────
+async function init() {
+  if (!SB_URL || !SB_KEY) { showModal(); return; }
+  setStatus('Cargando…', false);
+  try {
+    weeks = await sb('semanas','select=week_start,week_label,tickets_total,tickets_takeout,takeout_pct,created_at&order=week_start.asc');
+    if (!weeks.length) throw new Error('Sin datos');
+    const [b,c,r,d] = await Promise.all([
+      sb('bolleria_ventas','select=week_start,proveedor,producto,qty_vendida'),
+      sb('cafe_ventas','select=week_start,producto,qty_vendida'),
+      sb('retail_ventas','select=week_start,producto,qty_vendida'),
+      sb('desechables_estimados','select=*'),
+    ]);
+    bollData   = grpBy(b,'week_start');
+    cafeData   = grpBy(c,'week_start');
+    retailData = grpBy(r,'week_start');
+    desechData = grpBy(d,'week_start');
+    curIdx = weeks.length - 1;
+    renderChips();
+    renderAll();
+    // Latest sync = max created_at in semanas
+    const latest = weeks[weeks.length - 1];
+    if (latest?.created_at) {
+      const d = new Date(latest.created_at);
+      document.getElementById('sync-date').textContent =
+        d.toLocaleDateString('es-ES', {day:'2-digit',month:'2-digit',year:'numeric'}) +
+        ' ' + d.toLocaleTimeString('es-ES', {hour:'2-digit',minute:'2-digit'});
+    } else {
+      // fallback: use week_start of latest week
+      document.getElementById('sync-date').textContent = latest?.week_start || '—';
+    }
+    setStatus(`${weeks.length} semanas`, false);
+  } catch(e) { setStatus('Error: '+e.message, true); }
+}
+
+function grpBy(arr, key) {
+  const o={};
+  for (const x of arr) { if (!o[x[key]]) o[x[key]]=[]; o[x[key]].push(x); }
+  return o;
+}
+
+// ── NAV ────────────────────────────────────────────────────
+function navWeek(d) { const n=curIdx+d; if(n<0||n>=weeks.length) return; curIdx=n; renderAll(); }
+function navLatest() { curIdx=weeks.length-1; renderAll(); }
+function selectWeek(i) { curIdx=i; renderAll(); }
+
+function renderChips() {
+  document.getElementById('chips').innerHTML = weeks.map((w,i)=>`
+    <button class="chip ${i===curIdx?'active':''}" onclick="selectWeek(${i})" id="chip-${i}">
+      ${w.week_start.slice(5).replace('-','/')}
+    </button>`).join('');
+}
+function updateChips() {
+  document.querySelectorAll('.chip').forEach((el,i)=>el.classList.toggle('active',i===curIdx));
+  const a=document.getElementById(`chip-${curIdx}`);
+  if(a) a.scrollIntoView({block:'nearest',inline:'center',behavior:'smooth'});
+}
+
+// ── RENDER ALL ─────────────────────────────────────────────
+function renderAll() {
+  updateChips();
+  const w = weeks[curIdx];
+  document.getElementById('week-label').textContent = w.week_label;
+  document.getElementById('btn-prev').disabled = curIdx===0;
+  document.getElementById('btn-next').disabled = curIdx===weeks.length-1;
+
+  const boll   = (bollData[w.week_start]||[]).filter(r=>r.qty_vendida>0).sort((a,b)=>b.qty_vendida-a.qty_vendida);
+  const cafes  = (cafeData[w.week_start]||[]).filter(r=>r.qty_vendida>0).sort((a,b)=>b.qty_vendida-a.qty_vendida);
+  const retail = (retailData[w.week_start]||[]).filter(r=>r.qty_vendida>0).sort((a,b)=>b.qty_vendida-a.qty_vendida);
+  const des    = (desechData[w.week_start]||[])[0]||{};
+
+  document.getElementById('grid').innerHTML =
+    sGeneral(w) +
+    sBolleria(boll) +
+    sBebidas(cafes) +
+    sConsumibles(cafes) +
+    sRetailStock(retail, w.week_start) +
+    sDesechables(des, w);
+}
+
+// ── GENERAL ────────────────────────────────────────────────
+function sGeneral(w) {
+  return `<div class="section general">
+    <div class="gen-grid">
+      <div class="gen-cell"><div class="gen-label">Tickets</div><div class="gen-val">${w.tickets_total.toLocaleString('es')}</div></div>
+      <div class="gen-cell"><div class="gen-label">Takeout</div><div class="gen-val orange">${w.tickets_takeout.toLocaleString('es')}</div></div>
+      <div class="gen-cell"><div class="gen-label">Takeout %</div><div class="gen-val">${w.takeout_pct}%</div></div>
+      <div class="gen-cell"><div class="gen-label">Semana</div><div class="gen-val" style="font-size:13px;margin-top:5px;color:var(--muted)">${w.week_label}</div></div>
+    </div>
+  </div>`;
+}
+
+// ── BOLLERÍA ───────────────────────────────────────────────
+function sBolleria(rows) {
+  const total = rows.reduce((s,r)=>s+r.qty_vendida,0);
+  const max   = Math.max(...rows.map(r=>r.qty_vendida),1);
+  const order = ['PANESCO','FLORA','CLEM'];
+  const byP   = {};
+  rows.forEach(r=>{ const p=BOLL_PROV[r.producto]||r.proveedor||'OTRO'; if(!byP[p])byP[p]=[]; byP[p].push(r); });
+  let html='';
+  for (const p of [...order,...Object.keys(byP).filter(k=>!order.includes(k))]) {
+    if (!byP[p]?.length) continue;
+    byP[p].forEach(r=>{
+      const pct=(r.qty_vendida/max*100).toFixed(0);
+      const col = p==='FLORA'?'var(--orange)':p==='PANESCO'?'var(--blue)':'var(--purple)';
+      const cls = p.toLowerCase();
+      html+=`<tr><td><span class="prov ${cls}">${p}</span>${r.producto}</td>
+        <td><div class="bar-wrap"><div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div>${r.qty_vendida}</div></td></tr>`;
+    });
+  }
+  return `<div class="section">
+    <div class="sec-head"><span class="sec-title">Bollería</span><span class="sec-total">${total} uds</span></div>
+    <table class="dtable">${html||'<tr><td class="empty">Sin datos</td><td>—</td></tr>'}</table>
+  </div>`;
+}
+
+// ── BEBIDAS ────────────────────────────────────────────────
+function sBebidas(rows) {
+  const total = rows.reduce((s,r)=>s+r.qty_vendida,0);
+  const max   = Math.max(...rows.map(r=>r.qty_vendida),1);
+  const html  = rows.map(r=>{
+    const pct=(r.qty_vendida/max*100).toFixed(0);
+    return `<tr><td>${r.producto}</td>
+      <td><div class="bar-wrap"><div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:var(--orange)"></div></div>${r.qty_vendida}</div></td></tr>`;
+  }).join('');
+  return `<div class="section">
+    <div class="sec-head"><span class="sec-title">Bebidas</span><span class="sec-total">${total} uds</span></div>
+    <table class="dtable">${html||'<tr><td class="empty">Sin datos</td><td>—</td></tr>'}</table>
+  </div>`;
+}
+
+// ── CONSUMIBLES: COLD BREW + MATCHA ────────────────────────
+function sConsumibles(cafes) {
+  // Cold brew
+  let totalCbMl = 0;
+  const cbBreakdown = [];
+  for (const r of cafes) {
+    const ml = COLD_BREW_ML[r.producto];
+    if (ml > 0) {
+      const subtotal = ml * r.qty_vendida;
+      totalCbMl += subtotal;
+      cbBreakdown.push({ name: r.producto, qty: r.qty_vendida, ml, subtotal });
+    }
+  }
+  const cbEnvases = totalCbMl / CB_ENVASE_ML;
+  const cbEnvasesDisplay = cbEnvases < 1
+    ? `<1` : cbEnvases.toFixed(1);
+
+  const cbRows = cbBreakdown.map(x=>
+    `<div class="cons-row"><span>${x.name} ×${x.qty}</span><span>${x.subtotal}ml</span></div>`
+  ).join('') || '<div class="cons-row"><span style="color:var(--dim)">Sin consumo esta semana</span><span>—</span></div>';
+
+  // Matcha
+  let totalMatchaG = 0;
+  const matchaBreakdown = [];
+  for (const r of cafes) {
+    if (MATCHA_ITEMS.has(r.producto)) {
+      const g = MATCHA_G_PER * r.qty_vendida;
+      totalMatchaG += g;
+      matchaBreakdown.push({ name: r.producto, qty: r.qty_vendida, g });
+    }
+  }
+  const matchaRows = matchaBreakdown.map(x=>
+    `<div class="cons-row"><span>${x.name} ×${x.qty}</span><span>${x.g.toFixed(1)}g</span></div>`
+  ).join('') || '<div class="cons-row"><span style="color:var(--dim)">Sin consumo esta semana</span><span>—</span></div>';
+
+  return `<div class="section">
+    <div class="sec-head"><span class="sec-title">Consumibles</span></div>
+    <div class="cons-grid">
+      <div class="cons-cell">
+        <div class="cons-label">Concentrado Cold Brew (5L)</div>
+        <div class="cons-big">${cbEnvasesDisplay}</div>
+        <div class="cons-unit">envases · ${totalCbMl.toLocaleString('es')} ml totales</div>
+        <div class="cons-breakdown">${cbRows}</div>
+      </div>
+      <div class="cons-cell">
+        <div class="cons-label">Matcha (1.5g/bebida)</div>
+        <div class="cons-big">${totalMatchaG.toFixed(0)}<span style="font-size:18px">g</span></div>
+        <div class="cons-unit">${(totalMatchaG/1000).toFixed(2)} kg · ${matchaBreakdown.reduce((s,x)=>s+x.qty,0)} bebidas</div>
+        <div class="cons-breakdown">${matchaRows}</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── RETAIL STOCK ───────────────────────────────────────────
+function sRetailStock(retailSold, weekStart) {
+  const stockKey = `stock_${weekStart}`;
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(stockKey)||'{}'); } catch(e){}
+
+  // Map sold quantities by product name
+  const sold = {};
+  retailSold.forEach(r => {
+    const nameClean = r.producto
+      .replace(/\s*\(250g\)/i,'').replace(/\s*\(1[Kk]g\)/i,'')
+      .replace(/\s*\(BYO 250g\)/i,'').trim();
+    // Try to match catalog
+    for (const cat of RETAIL_CATALOG) {
+      if (nameClean.includes(cat.name) || cat.name.includes(nameClean.split('/').pop().trim())) {
+        const fmt = r.producto.match(/1[Kk]g/i) ? '1kg' : '250g';
+        const k = `${cat.name}_${fmt}`;
+        sold[k] = (sold[k]||0) + r.qty_vendida;
+        break;
+      }
+    }
+  });
+
+  const rows = RETAIL_CATALOG.flatMap(cat =>
+    FORMATS.map(fmt => {
+      const k = `${cat.name}_${fmt}`;
+      const entrada  = saved[k] || 0;
+      const ajuste   = saved[`${k}_ajuste`] || 0;
+      const vendido  = sold[k]  || 0;
+      const restante = entrada + ajuste - vendido;
+      return { cat, fmt, k, entrada, ajuste, vendido, restante };
+    })
+  );
+
+  const tableRows = rows.map(r => {
+    const empty = r.entrada===0 && r.ajuste===0 && r.vendido===0;
+    const restCls = empty ? '' : r.restante <= 2 ? 'bajo' : 'ok';
+    return `<div class="stock-row">
+      <div class="stock-name">
+        ${r.cat.name}
+        <span class="stock-format">${r.cat.origin} · ${r.fmt}</span>
+      </div>
+      <div class="stock-cell entrada">
+        <input type="number" min="0" value="${r.entrada}" id="si_${r.k}" oninput="recalcRow('${r.k}','${weekStart}')">
+      </div>
+      <div class="stock-cell" id="sv_${r.k}">${r.vendido}</div>
+      <div class="stock-cell ajuste">
+        <input type="number" value="${r.ajuste}" id="sa_${r.k}" oninput="recalcRow('${r.k}','${weekStart}')" title="Merma / ajuste manual (negativo = pérdida)">
+      </div>
+      <div class="stock-cell stock-restante ${restCls}" id="sr_${r.k}">${empty?'—':r.restante}</div>
+    </div>`;
+  }).join('');
+
+  return `<div class="section full">
+    <div class="sec-head">
+      <span class="sec-title">Retail — stock semanal</span>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="saved-badge" id="saved-badge">✓ Guardado</span>
+        <button class="reset-btn" onclick="resetStock('${weekStart}')">Limpiar</button>
+        <button class="save-btn" onclick="saveStock('${weekStart}')">Guardar entradas</button>
+      </div>
+    </div>
+    <div class="stock-head-row">
+      <span>Producto</span>
+      <span>Entrada lunes</span>
+      <span>Vendido</span>
+      <span>Ajuste</span>
+      <span>Restante</span>
+    </div>
+    ${tableRows}
+  </div>`;
+}
+
+function recalcRow(k, weekStart) {
+  const entrada  = parseInt(document.getElementById(`si_${k}`)?.value||0, 10);
+  const ajuste   = parseInt(document.getElementById(`sa_${k}`)?.value||0, 10);
+  const vendido  = parseInt(document.getElementById(`sv_${k}`)?.textContent||0, 10);
+  const restante = entrada + ajuste - vendido;
+  const srEl = document.getElementById(`sr_${k}`);
+  const empty = entrada===0 && ajuste===0 && vendido===0;
+  if (srEl) {
+    srEl.textContent = empty ? '—' : restante;
+    srEl.className = 'stock-cell stock-restante' + (empty?'': restante<=2?' bajo':' ok');
+  }
+}
+
+function saveStock(weekStart) {
+  const stockKey = `stock_${weekStart}`;
+  const data = {};
+  RETAIL_CATALOG.forEach(cat => {
+    FORMATS.forEach(fmt => {
+      const k = `${cat.name}_${fmt}`;
+      const elE = document.getElementById(`si_${k}`);
+      const elA = document.getElementById(`sa_${k}`);
+      if (elE) data[k] = parseInt(elE.value||0, 10);
+      if (elA) data[`${k}_ajuste`] = parseInt(elA.value||0, 10);
+    });
+  });
+  localStorage.setItem(stockKey, JSON.stringify(data));
+  const badge = document.getElementById('saved-badge');
+  if (badge) {
+    badge.classList.add('show');
+    setTimeout(()=>badge.classList.remove('show'), 2000);
+  }
+}
+
+function resetStock(weekStart) {
+  if (!confirm('¿Limpiar todas las entradas de esta semana?')) return;
+  localStorage.removeItem(`stock_${weekStart}`);
+  renderAll();
+}
+
+// ── DESECHABLES ────────────────────────────────────────────
+function sDesechables(des, w) {
+  const base = w.tickets_takeout || 0;
+  const cells = [
+    { label:'Vasos 4oz',    val:des.vasos_4oz    || Math.round(base*.085), sub:'espresso · TALLAT S · macchiato' },
+    { label:'Vasos 6oz',    val:des.vasos_6oz    || Math.round(base*.643), sub:'cappuccino · flat white · long black' },
+    { label:'Vasos 8oz',    val:des.vasos_8oz    || Math.round(base*.378), sub:'café con leche L · chai · matcha' },
+    { label:'Tapas 6/7oz',  val:des.tapas_6oz_7oz|| Math.round(base*.728), sub:'tapa negra pequeña' },
+    { label:'Tapas 8oz',    val:des.tapas_8oz    || Math.round(base*.378), sub:'tapa negra/blanca grande' },
+    { label:'Tapas PET',    val:des.tapas_frias  || Math.round(base*.049), sub:'bebidas frías · iced' },
+    { label:'Fundas',       val:des.fundas_corrugadas||Math.round(base*.007), sub:'long black 1/10' },
+    { label:'Bolsas kraft', val:des.bolsas_kraft || Math.round(base*.21),  sub:'takeaway bollería' },
+    { label:'Pajitas',      val:des.pajitas      || Math.round(base*.049), sub:'bebidas frías' },
+  ];
+  return `<div class="section des">
+    <div class="sec-head"><span class="sec-title">Desechables estimados</span><span class="sec-total">${base} takeouts</span></div>
+    <div class="des-grid">${cells.map(c=>`
+      <div class="des-cell">
+        <div class="des-label">${c.label}</div>
+        <div class="des-val">~${(c.val||0).toLocaleString('es')}</div>
+        <div class="des-sub">${c.sub}</div>
+      </div>`).join('')}
+    </div>
+  </div>`;
+}
+
+// ── HELPERS ────────────────────────────────────────────────
+function setStatus(msg, err) {
+  document.getElementById('stxt').textContent = msg;
+  document.getElementById('sdot').className = 'sdot'+(err?' err':'');
+}
+function showModal() {
+  document.getElementById('cfg-url').value = SB_URL;
+  document.getElementById('cfg-key').value = SB_KEY;
+  document.getElementById('modal').style.display = 'flex';
+}
+function saveConfig() {
+  SB_URL = document.getElementById('cfg-url').value.trim().replace(/\/$/,'');
+  SB_KEY = document.getElementById('cfg-key').value.trim();
+  localStorage.setItem('sb_url',SB_URL);
+  localStorage.setItem('sb_key',SB_KEY);
+  document.getElementById('modal').style.display = 'none';
+  init();
+}
+
+window.addEventListener('load', ()=>{
+  if (!SB_URL||!SB_KEY) showModal();
+  else { document.getElementById('modal').style.display='none'; init(); }
+});
+</script>
+</body>
+</html>
