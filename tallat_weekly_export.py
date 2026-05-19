@@ -545,8 +545,8 @@ if __name__ == "__main__":
         run_current_week()
 
     else:
-        log.info("Daemon -- ejecutara cada domingo a las 23:59")
-        schedule.every().sunday.at("23:59").do(run_current_week)
+        log.info("Daemon -- ejecutara cada dia a las 23:59")
+        schedule.every().day.at("23:59").do(run_current_week)
         log.info(f"Proxima ejecucion: {schedule.next_run()}")
         while True:
             schedule.run_pending()
