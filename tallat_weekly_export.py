@@ -236,7 +236,7 @@ def save_to_supabase(monday, data, pedidos, week_label):
     if retail_rows:
         sb_insert("retail_ventas", retail_rows)
 
-    # 6 — desechables → INSERT (DELETE ya hecho arriba en línea 194)
+    # 6 — desechables → INSERT (DELETE ya hecho arriba)
     des = data["desechables"]
     sb_insert("desechables_estimados", {
         "week_start":        date_str,
@@ -247,6 +247,17 @@ def save_to_supabase(monday, data, pedidos, week_label):
         "portavasos_x2":     des.get("portavasos_x2", 0),
         "pajitas":           des.get("pajitas", 0),
     })
+
+    # 7 — showcase / modificadores especiales
+    sc = data.get("showcase", {})
+    sb_delete("showcase_ventas", "week_start", date_str)
+    if sc:
+        sb_insert("showcase_ventas", {
+            "week_start":         date_str,
+            "showcase_espresso":  sc.get("showcase_espresso", 0),
+            "house2":             sc.get("house2", 0),
+            "decaf":              sc.get("decaf", 0),
+        })
 
     log.info(f"  Supabase: semana {date_str} guardada")
 
@@ -288,12 +299,13 @@ def get_receipts(date_from, date_to):
 # ANÁLISIS
 # ─────────────────────────────────────────────────────────────────────────────
 def analyse(receipts):
-    bolleria = defaultdict(int)
-    cafes    = defaultdict(int)
-    retail   = defaultdict(int)
-    otros    = defaultdict(int)
-    total_t  = takeout_t = 0
-    revenue  = 0.0
+    bolleria   = defaultdict(int)
+    cafes      = defaultdict(int)
+    retail     = defaultdict(int)
+    otros      = defaultdict(int)
+    showcase   = defaultdict(int)  # showcase_espresso, house2, decaf por bebida
+    total_t    = takeout_t = 0
+    revenue    = 0.0
 
     for r in receipts:
         if r.get("cancelled_at"):
@@ -318,6 +330,19 @@ def analyse(receipts):
             else:
                 otros[full_name] += qty
 
+            # Detectar modificadores especiales (showcase, house2, decaf)
+            mods_raw = line.get("line_modifiers") or []
+            mod_names = " ".join(
+                (m.get("name") or m.get("modifier_name") or "")
+                for m in mods_raw
+            ).lower() if isinstance(mods_raw, list) else ""
+            if "showcase" in mod_names:
+                showcase["showcase_espresso"] += qty
+            if "house 2" in mod_names or "house2" in mod_names:
+                showcase["house2"] += qty
+            if "decaf" in mod_names:
+                showcase["decaf"] += qty
+
     des_base = takeout_t or round(total_t * TAKEOUT_RATIO_HIST)
     return {
         "bolleria":        dict(sorted(bolleria.items(), key=lambda x: -x[1])),
@@ -325,6 +350,7 @@ def analyse(receipts):
         "retail":          dict(sorted(retail.items(),   key=lambda x: -x[1])),
         "otros_top10":     dict(list(sorted(otros.items(), key=lambda x: -x[1]))[:10]),
         "desechables":     {k: round(des_base * v) for k, v in DESECHABLES_RATIO.items()},
+        "showcase":        dict(showcase),
         "tickets_total":   total_t,
         "tickets_takeout": takeout_t,
         "takeout_pct":     round(takeout_t / total_t * 100, 1) if total_t else 0,
@@ -525,6 +551,11 @@ def run_current_week():
     today  = datetime.date.today()
     monday = today - datetime.timedelta(days=today.weekday())
     process_week(monday)
+    # Auto-create next week shell if today is sunday (after weekly processing)
+    if today.weekday() == 6:
+        next_monday = monday + datetime.timedelta(days=7)
+        log.info(f"Domingo — creando semana siguiente: {next_monday}")
+        process_week(next_monday)
 
 if __name__ == "__main__":
     args = set(sys.argv[1:])

@@ -158,6 +158,58 @@ main { max-width:1200px; margin:0 auto; padding:24px 32px 64px; display:grid; gr
 .connect-btn:hover { background:var(--orange2); }
 
 
+
+/* CATALOG EDITOR */
+.cat-editor-overlay {
+  position:fixed; inset:0; background:rgba(26,23,20,.7);
+  z-index:200; display:none; align-items:center; justify-content:center;
+}
+.cat-editor-overlay.open { display:flex; }
+.cat-editor {
+  background:var(--paper); border:1px solid var(--rule);
+  width:420px; max-width:94vw; max-height:90vh;
+  display:flex; flex-direction:column;
+}
+.cat-editor-head {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:14px 18px; border-bottom:1px solid var(--rule); background:var(--bg);
+}
+.cat-editor-head h3 { font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); }
+.cat-editor-body { flex:1; overflow-y:auto; padding:8px 0; }
+.cat-item {
+  display:grid; grid-template-columns:28px 1fr 1fr 28px;
+  gap:6px; align-items:center; padding:6px 14px;
+  border-bottom:1px solid var(--rule);
+}
+.cat-item:last-child { border-bottom:none; }
+.cat-item input {
+  background:var(--bg); border:1px solid var(--rule); color:var(--ink);
+  padding:5px 8px; font-family:var(--sans); font-size:12px; outline:none; width:100%;
+}
+.cat-item input:focus { border-color:var(--orange); }
+.drag-handle { color:var(--dim); cursor:grab; font-size:14px; text-align:center; user-select:none; }
+.drag-handle:active { cursor:grabbing; }
+.del-btn { background:none; border:none; color:var(--dim); cursor:pointer; font-size:16px; padding:0; }
+.del-btn:hover { color:#c04040; }
+.cat-editor-foot {
+  display:flex; gap:8px; padding:12px 14px;
+  border-top:1px solid var(--rule); background:var(--bg);
+}
+.add-cafe-btn {
+  flex:1; background:none; border:1px dashed var(--rule); color:var(--muted);
+  padding:7px; font-family:var(--mono); font-size:10px; text-transform:uppercase;
+  letter-spacing:.08em; cursor:pointer; border-radius:2px;
+}
+.add-cafe-btn:hover { border-color:var(--orange); color:var(--orange); }
+.cat-save-btn {
+  background:var(--orange); color:white; border:none; padding:7px 18px;
+  font-family:var(--mono); font-size:10px; font-weight:500; text-transform:uppercase;
+  letter-spacing:.08em; cursor:pointer; border-radius:2px;
+}
+.cat-save-btn:hover { background:var(--orange2); }
+.cat-item.dragging { opacity:.4; }
+.cat-item.drag-over { border-top:2px solid var(--orange); }
+
 /* MOBILE */
 @media (max-width: 700px) {
   header {
@@ -255,17 +307,28 @@ let SB_URL = localStorage.getItem('sb_url') || '';
 let SB_KEY = localStorage.getItem('sb_key') || '';
 
 // ── RETAIL CATALOG ─────────────────────────────────────────
-const RETAIL_CATALOG = [
+const DEFAULT_CATALOG = [
   { name:'El Palto',       origin:'Perú' },
   { name:'Kickstart',      origin:'Etiopía' },
+  { name:'Tuang',          origin:'—' },
   { name:'Finca Noruega',  origin:'El Salvador' },
   { name:'Guayabos',       origin:'Colombia' },
   { name:'Kanya',          origin:'Ruanda' },
   { name:'Rugamba 205',    origin:'Ruanda' },
   { name:'Lala Salama 03', origin:'Etiopía Decaf' },
-  { name:'Tuang',          origin:'—' },
 ];
 const FORMATS = ['250g','1kg'];
+
+function loadCatalog() {
+  try {
+    const saved = localStorage.getItem('retail_catalog');
+    return saved ? JSON.parse(saved) : DEFAULT_CATALOG;
+  } catch(e) { return DEFAULT_CATALOG; }
+}
+function saveCatalog(cat) {
+  localStorage.setItem('retail_catalog', JSON.stringify(cat));
+}
+let RETAIL_CATALOG = loadCatalog();
 
 // ── BOLLERÍA ───────────────────────────────────────────────
 const BOLL_PROV = {
@@ -299,7 +362,7 @@ const MATCHA_ITEMS = new Set([
 ]);
 
 // ── STATE ──────────────────────────────────────────────────
-let weeks=[], bollData={}, cafeData={}, retailData={}, desechData={};
+let weeks=[], bollData={}, cafeData={}, retailData={}, desechData={}, showcaseData={};
 let curIdx = 0;
 
 // ── SUPABASE ───────────────────────────────────────────────
@@ -316,31 +379,35 @@ async function init() {
   if (!SB_URL || !SB_KEY) { showModal(); return; }
   setStatus('Cargando…', false);
   try {
-    weeks = await sb('semanas','select=week_start,week_label,tickets_total,tickets_takeout,takeout_pct,created_at&order=week_start.asc');
+    weeks = await sb('semanas','select=week_start,week_label,tickets_total,tickets_takeout,takeout_pct,updated_at&order=week_start.asc');
     if (!weeks.length) throw new Error('Sin datos');
-    const [b,c,r,d] = await Promise.all([
+    const [b,cv,r,d,sc] = await Promise.all([
       sb('bolleria_ventas','select=week_start,proveedor,producto,qty_vendida'),
       sb('cafe_ventas','select=week_start,producto,qty_vendida'),
       sb('retail_ventas','select=week_start,producto,qty_vendida'),
       sb('desechables_estimados','select=*'),
+      sb('showcase_ventas','select=*').catch(()=>[]),
     ]);
-    bollData   = grpBy(b,'week_start');
-    cafeData   = grpBy(c,'week_start');
-    retailData = grpBy(r,'week_start');
-    desechData = grpBy(d,'week_start');
+    bollData     = grpBy(b,'week_start');
+    cafeData     = grpBy(cv,'week_start');
+    retailData   = grpBy(r,'week_start');
+    desechData   = grpBy(d,'week_start');
+    showcaseData = grpBy(sc,'week_start');
     curIdx = weeks.length - 1;
     renderChips();
     renderAll();
-    // Latest sync = max created_at in semanas
-    const latest = weeks[weeks.length - 1];
-    if (latest?.created_at) {
-      const d = new Date(latest.created_at);
+    // Latest sync = semana con updated_at más reciente
+    const latestSync = weeks.reduce((best, w) => {
+      if (!w.updated_at) return best;
+      return (!best || w.updated_at > best) ? w.updated_at : best;
+    }, null);
+    if (latestSync) {
+      const d = new Date(latestSync);
       document.getElementById('sync-date').textContent =
         d.toLocaleDateString('es-ES', {day:'2-digit',month:'2-digit',year:'numeric'}) +
         ' ' + d.toLocaleTimeString('es-ES', {hour:'2-digit',minute:'2-digit'});
     } else {
-      // fallback: use week_start of latest week
-      document.getElementById('sync-date').textContent = latest?.week_start || '—';
+      document.getElementById('sync-date').textContent = '—';
     }
     setStatus(`${weeks.length} semanas`, false);
   } catch(e) { setStatus('Error: '+e.message, true); }
@@ -386,7 +453,7 @@ function renderAll() {
     sGeneral(w) +
     sBolleria(boll) +
     sBebidas(cafes) +
-    sConsumibles(cafes) +
+    sConsumibles(cafes, (showcaseData[w.week_start]||[])[0]||{}) +
     sRetailStock(retail, w.week_start) +
     sDesechables(des, w);
 }
@@ -443,7 +510,7 @@ function sBebidas(rows) {
 }
 
 // ── CONSUMIBLES: COLD BREW + MATCHA ────────────────────────
-function sConsumibles(cafes) {
+function sConsumibles(cafes, sc) {
   // Cold brew
   let totalCbMl = 0;
   const cbBreakdown = [];
@@ -477,9 +544,15 @@ function sConsumibles(cafes) {
     `<div class="cons-row"><span>${x.name} ×${x.qty}</span><span>${x.g.toFixed(1)}g</span></div>`
   ).join('') || '<div class="cons-row"><span style="color:var(--dim)">Sin consumo esta semana</span><span>—</span></div>';
 
+  // Showcase
+  const showEsp  = sc.showcase_espresso || 0;
+  const showH2   = sc.house2            || 0;
+  const showDec  = sc.decaf             || 0;
+  const showTotal = showEsp + showH2 + showDec;
+
   return `<div class="section">
     <div class="sec-head"><span class="sec-title">Consumibles</span></div>
-    <div class="cons-grid">
+    <div class="cons-grid" style="grid-template-columns:1fr 1fr 1fr">
       <div class="cons-cell">
         <div class="cons-label">Concentrado Cold Brew (5L)</div>
         <div class="cons-big">${cbEnvasesDisplay}</div>
@@ -491,6 +564,16 @@ function sConsumibles(cafes) {
         <div class="cons-big">${totalMatchaG.toFixed(0)}<span style="font-size:18px">g</span></div>
         <div class="cons-unit">${(totalMatchaG/1000).toFixed(2)} kg · ${matchaBreakdown.reduce((s,x)=>s+x.qty,0)} bebidas</div>
         <div class="cons-breakdown">${matchaRows}</div>
+      </div>
+      <div class="cons-cell">
+        <div class="cons-label">Showcase / Especiales</div>
+        <div class="cons-big">${showTotal}</div>
+        <div class="cons-unit">espressos con modificador</div>
+        <div class="cons-breakdown">
+          <div class="cons-row"><span>Showcase Espresso (L · 18g)</span><span>${showEsp}</span></div>
+          <div class="cons-row"><span>House 2 (L · 18g)</span><span>${showH2}</span></div>
+          <div class="cons-row"><span>Decaf (cualquier tamaño)</span><span>${showDec}</span></div>
+        </div>
       </div>
     </div>
   </div>`;
@@ -530,20 +613,34 @@ function sRetailStock(retailSold, weekStart) {
     })
   );
 
-  const tableRows = rows.map(r => {
-    const empty = r.entrada===0 && r.ajuste===0 && r.vendido===0;
+  // Order: 250g then 1kg per cafe, following RETAIL_CATALOG order
+  const grouped = RETAIL_CATALOG.flatMap(cat => [
+    rows.find(r => r.cat.name === cat.name && r.fmt === '250g'),
+    rows.find(r => r.cat.name === cat.name && r.fmt === '1kg'),
+  ]).filter(Boolean);
+
+  const tableRows = grouped.map(r => {
+    const empty  = r.entrada===0 && r.ajuste===0 && r.vendido===0;
     const restCls = empty ? '' : r.restante <= 2 ? 'bajo' : 'ok';
-    return `<div class="stock-row">
-      <div class="stock-name">
-        ${r.cat.name}
-        <span class="stock-format">${r.cat.origin} · ${r.fmt}</span>
-      </div>
-      <div class="stock-cell entrada">
-        <input type="number" min="0" value="${r.entrada}" id="si_${r.k}" oninput="recalcRow('${r.k}','${weekStart}')">
-      </div>
+    const is1kg  = r.fmt === '1kg';
+    const nameCell = is1kg
+      ? `<div class="stock-name" style="padding-left:18px;color:var(--dim)">
+           <span class="stock-format" style="display:inline">1 kg</span>
+         </div>`
+      : `<div class="stock-name">${r.cat.name}
+           <span class="stock-format">${r.cat.origin}</span>
+         </div>`;
+    const entradaCell = is1kg
+      ? `<div class="stock-cell" style="color:var(--dim);text-align:right">—</div>`
+      : `<div class="stock-cell entrada">
+           <input type="number" min="0" value="${r.entrada}" id="si_${r.k}" oninput="recalcRow('${r.k}','${weekStart}')">
+         </div>`;
+    return `<div class="stock-row" style="${is1kg?'opacity:.75;':''}">
+      ${nameCell}
+      ${entradaCell}
       <div class="stock-cell" id="sv_${r.k}">${r.vendido}</div>
       <div class="stock-cell ajuste">
-        <input type="number" value="${r.ajuste}" id="sa_${r.k}" oninput="recalcRow('${r.k}','${weekStart}')" title="Merma / ajuste manual (negativo = pérdida)">
+        <input type="number" value="${r.ajuste}" id="sa_${r.k}" oninput="recalcRow('${r.k}','${weekStart}')" title="Ajuste (negativo=merma)">
       </div>
       <div class="stock-cell stock-restante ${restCls}" id="sr_${r.k}">${empty?'—':r.restante}</div>
     </div>`;
@@ -552,10 +649,11 @@ function sRetailStock(retailSold, weekStart) {
   return `<div class="section full">
     <div class="sec-head">
       <span class="sec-title">Retail — stock semanal</span>
-      <div style="display:flex;align-items:center;gap:10px">
+      <div style="display:flex;align-items:center;gap:8px">
         <span class="saved-badge" id="saved-badge">✓ Guardado</span>
+        <button class="reset-btn" onclick="openCatalogEditor()">Editar cafés</button>
         <button class="reset-btn" onclick="resetStock('${weekStart}')">Limpiar</button>
-        <button class="save-btn" onclick="saveStock('${weekStart}')">Guardar entradas</button>
+        <button class="save-btn" onclick="saveStock('${weekStart}')">Guardar</button>
       </div>
     </div>
     <div class="stock-head-row">
@@ -657,6 +755,96 @@ window.addEventListener('load', ()=>{
   if (!SB_URL||!SB_KEY) showModal();
   else { document.getElementById('modal').style.display='none'; init(); }
 });
+</script>
+
+<!-- Catalog Editor -->
+<div class="cat-editor-overlay" id="cat-editor-overlay">
+  <div class="cat-editor">
+    <div class="cat-editor-head">
+      <h3>Cafés retail — orden y nombres</h3>
+      <button class="del-btn" onclick="closeCatalogEditor()" style="font-size:20px">×</button>
+    </div>
+    <div class="cat-editor-body" id="cat-editor-body"></div>
+    <div class="cat-editor-foot">
+      <button class="add-cafe-btn" onclick="addCatalogItem()">+ Añadir café</button>
+      <button class="cat-save-btn" onclick="saveCatalogEditor()">Guardar orden</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── CATALOG EDITOR ─────────────────────────────────────────
+let dragSrc = null;
+
+function openCatalogEditor() {
+  renderCatalogEditor();
+  document.getElementById('cat-editor-overlay').classList.add('open');
+}
+function closeCatalogEditor() {
+  document.getElementById('cat-editor-overlay').classList.remove('open');
+}
+
+function renderCatalogEditor() {
+  const body = document.getElementById('cat-editor-body');
+  body.innerHTML = RETAIL_CATALOG.map((item, i) => `
+    <div class="cat-item" draggable="true" id="catrow-${i}"
+      ondragstart="dragStart(event,${i})" ondragover="dragOver(event,${i})"
+      ondrop="dropItem(event,${i})" ondragleave="dragLeave(event,${i})">
+      <div class="drag-handle">⋮⋮</div>
+      <input type="text" value="${item.name}"   id="cname-${i}" placeholder="Nombre">
+      <input type="text" value="${item.origin}" id="corigin-${i}" placeholder="Origen">
+      <button class="del-btn" onclick="deleteCatalogItem(${i})">×</button>
+    </div>`).join('');
+}
+
+function dragStart(e, i) {
+  dragSrc = i;
+  e.dataTransfer.effectAllowed = 'move';
+  setTimeout(() => document.getElementById(`catrow-${i}`)?.classList.add('dragging'), 0);
+}
+function dragOver(e, i) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  document.getElementById(`catrow-${i}`)?.classList.add('drag-over');
+}
+function dragLeave(e, i) {
+  document.getElementById(`catrow-${i}`)?.classList.remove('drag-over');
+}
+function dropItem(e, i) {
+  e.preventDefault();
+  document.getElementById(`catrow-${i}`)?.classList.remove('drag-over');
+  document.getElementById(`catrow-${dragSrc}`)?.classList.remove('dragging');
+  if (dragSrc === i || dragSrc === null) return;
+  const tmp = RETAIL_CATALOG.splice(dragSrc, 1)[0];
+  RETAIL_CATALOG.splice(i, 0, tmp);
+  renderCatalogEditor();
+}
+
+function addCatalogItem() {
+  RETAIL_CATALOG.push({ name: '', origin: '' });
+  renderCatalogEditor();
+  // Focus the new name input
+  const last = RETAIL_CATALOG.length - 1;
+  setTimeout(() => document.getElementById(`cname-${last}`)?.focus(), 50);
+}
+
+function deleteCatalogItem(i) {
+  RETAIL_CATALOG.splice(i, 1);
+  renderCatalogEditor();
+}
+
+function saveCatalogEditor() {
+  // Read current values from inputs
+  RETAIL_CATALOG.forEach((item, i) => {
+    item.name   = document.getElementById(`cname-${i}`)?.value?.trim() || item.name;
+    item.origin = document.getElementById(`corigin-${i}`)?.value?.trim() || item.origin;
+  });
+  // Remove empty entries
+  RETAIL_CATALOG = RETAIL_CATALOG.filter(x => x.name);
+  saveCatalog(RETAIL_CATALOG);
+  closeCatalogEditor();
+  renderAll();
+}
 </script>
 </body>
 </html>
